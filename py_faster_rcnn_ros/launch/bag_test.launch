@@ -1,0 +1,38 @@
+<launch>
+
+<!-- 
+
+Usage: roslaunch bag_test.launch \
+           filename:=[full path to bag file] \
+           topic:=[topic in bag to run detections on] \
+           <compressed:=true|false>
+-->
+
+    <arg name="filename"/>
+    <arg name="topic"/>
+
+    <arg name="compressed" default="false"/>
+
+    <node name="rosbag_playback" pkg="rosbag" type="play" args="$(arg filename)
+-l">
+        <remap unless="$(arg compressed)" from="$(arg topic)" to="/camera/rgb/image_raw"/>
+    </node>
+
+    <node if="$(arg compressed)"
+          name="decompress_image" 
+          pkg="image_transport" type="republish" args="compressed">
+        <remap from="in" to="$(arg topic)"/>
+        <remap from="out" to="/camera/rgb/image_raw"/>
+    </node>
+
+    <node name="detector_manager_node" pkg="py_faster_rcnn_ros" type="detector_manager.py" output="screen" respawn="true">
+        <param name="autostart" value="true"/>
+        <param name="confidence" value="0.5"/>
+        <param name="caffe_model" 
+               value="ZF_faster_rcnn_all_three_extra_case.caffemodel"/>
+        <param name="image_topic" value="/camera/rgb/image_raw"/>
+    </node>
+
+    <node name="rqt_image_view" pkg="rqt_image_view" type="rqt_image_view" args="/object_visualization"/>
+
+</launch>

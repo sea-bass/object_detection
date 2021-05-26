@@ -140,17 +140,30 @@ class DetectorManager():
         self.classes = {}
 
 
-        self.image_topic = rospy.get_param('~image_topic', '/image')
+        self.image_topic_A = rospy.get_param('~image_topic_A', '/camera_A/color_image_raw')
+        self.image_topic_B = rospy.get_param('~image_topic_B', '/camera_B/color_image_raw')
+        self.image_topic_C = rospy.get_param('~image_topic_C', '/camera_C/color_image_raw')
 
         rospy.loginfo("Autostarting detector_manager")
-        self.image_sub = rospy.Subscriber(self.image_topic, Image, self.imageCb, queue_size = 1, buff_size = 2**24)
+        self.pubs = {
+            "A": rospy.Publisher("/camera_A/detected_objects", ira_dets, queue_size=10),
+            "B": rospy.Publisher("/camera_B/detected_objects", ira_dets, queue_size=10),
+            "C": rospy.Publisher("/camera_C/detected_objects", ira_dets, queue_size=10),
+        }
+        self.pub_viz_ = rospy.Publisher("~object_visualization", Image, queue_size=10)
+        self.image_sub_A = rospy.Subscriber(self.image_topic_A, Image, 
+                                            lambda data: self.imageCb(data, "A"),
+                                            queue_size = 1, buff_size = 2**24)
+        self.image_sub_B = rospy.Subscriber(self.image_topic_B, Image,
+                                            lambda data: self.imageCb(data, "B"),
+                                            queue_size = 1, buff_size = 2**24)
+        self.image_sub_C = rospy.Subscriber(self.image_topic_C, Image,
+                                            lambda data: self.imageCb(data, "C"),
+                                            queue_size = 1, buff_size = 2**24)
         self.confidence_th = rospy.get_param("~confidence", 0.5)
         # rospy.Service('start_detection', ImageFrame, self.startStreamCb)
         # rospy.Service('stop_detection', ImageFrame, self.stopStreamCb)
 
-
-        self.pub_ = rospy.Publisher("detected_objects", ira_dets, queue_size=10)
-        self.pub_viz_ = rospy.Publisher("~object_visualization", Image, queue_size=10)
         rospy.loginfo("Launched node for object detection and pose estimation")
 
         # if rospy.get_param("~autostart", False):
@@ -177,12 +190,12 @@ class DetectorManager():
     #     return True
 
     def stopStreamCb(self,req):
-        self.image_sub.unregister();
+        self.image_sub.unregister()
         message = ('streaming stopped')
         rospy.logwarn(message)
         return False
 
-    def imageCb(self, data):
+    def imageCb(self, data, camera="A"):
         start = rospy.Time().now()
         if self.cpu_mode:
             caffe.set_mode_cpu()
@@ -190,7 +203,7 @@ class DetectorManager():
             caffe.set_mode_gpu()
             caffe.set_device(self.gpu_id)
         try:
-            self.cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8");
+            self.cv_image = self.bridge.imgmsg_to_cv2(data, "bgr8")
         except CvBridgeError as e:
             print(e)
 
@@ -206,7 +219,7 @@ class DetectorManager():
             dstop = rospy.Time().now()
             detection_results.dets = detector_out
             detection_results.n_dets = len(detector_out)
-            self.pub_.publish(detection_results)
+            self.pubs[camera].publish(detection_results)
             stop = rospy.Time().now()
             rospy.loginfo('Total processing: {}s, object detection: {}s '.\
                           format( \
